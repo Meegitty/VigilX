@@ -39,3 +39,14 @@
 
 # debug information files
 *.dwo
+
+# PlatformIO
+.pio/
+
+# VS Code (optional)
+.vscode/
+*.code-workspace
+
+# OS junk (optional)
+.DS_Store
+Thumbs.db
