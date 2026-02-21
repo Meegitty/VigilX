@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:geocoding/geocoding.dart';
@@ -24,6 +26,8 @@ class _HomeScreenState extends State<HomeScreen> {
   DateTime? _lastLocationUpdate;
   String? _locName;
 
+  StreamSubscription<LocationSnapshot>? _locSub;
+
   List<EmergencyContact> _contacts = [];
 
   @override
@@ -31,6 +35,13 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _loadContacts();
     _refreshLocation();
+    _startLiveLocation();
+  }
+
+  @override
+  void dispose() {
+    _stopLiveLocation();
+    super.dispose();
   }
 
   Future<void> _loadContacts() async {
@@ -60,6 +71,40 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       setState(() => _loadingLoc = false);
     }
+  }
+
+  Future<void> _startLiveLocation() async {
+    _locSub?.cancel();
+
+    // Only track when monitoring is enabled
+    if (!monitoringOn) return;
+
+    try {
+      final stream = await LocationService.subscribeToLocationChanges();
+      _locSub = stream.listen(
+        (snap) {
+          if (!mounted || !monitoringOn) return;
+          setState(() {
+            _loc = snap;
+            _lastLocationUpdate = DateTime.now();
+            _locError = null;
+          });
+          _updatePlaceName(snap);
+        },
+        onError: (e) {
+          if (!mounted) return;
+          setState(() => _locError = e.toString());
+        },
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _locError = e.toString());
+    }
+  }
+
+  void _stopLiveLocation() {
+    _locSub?.cancel();
+    _locSub = null;
   }
 
   Future<void> _updatePlaceName(LocationSnapshot snap) async {
@@ -240,7 +285,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   Switch(
                     value: monitoringOn,
-                    onChanged: (v) => setState(() => monitoringOn = v),
+                    onChanged: (v) {
+                      setState(() => monitoringOn = v);
+                      if (v) {
+                        _startLiveLocation();
+                      } else {
+                        _stopLiveLocation();
+                      }
+                    },
                   ),
                 ],
               ),
@@ -412,18 +464,20 @@ class _HomeScreenState extends State<HomeScreen> {
 
           // Emergency contacts
           Card(
+            color: Colors.red.shade50,
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.people),
+                      const Icon(Icons.people, color: Colors.red),
                       const SizedBox(width: 8),
                       Text(
                         'Emergency contacts',
                         style: Theme.of(context).textTheme.titleMedium?.copyWith(
                               fontWeight: FontWeight.w700,
+                              color: Colors.red.shade900,
                             ),
                       ),
                       const Spacer(),
@@ -434,32 +488,33 @@ class _HomeScreenState extends State<HomeScreen> {
                           );
                           await _loadContacts();
                         },
+                        style: TextButton.styleFrom(foregroundColor: Colors.red.shade900),
                         child: const Text('Edit'),
                       )
                     ],
                   ),
                   const SizedBox(height: 8),
                   if (_contacts.isEmpty)
-                    const Align(
+                    Align(
                       alignment: Alignment.centerLeft,
-                      child: Text('No contacts yet. Tap Edit to add.'),
+                      child: Text('No contacts yet. Tap Edit to add.', style: TextStyle(color: Colors.red.shade900)),
                     )
                   else
                     ..._contacts.take(3).map(
                           (c) => ListTile(
                             dense: true,
                             contentPadding: EdgeInsets.zero,
-                            leading: const Icon(Icons.person),
-                            title: Text(c.name),
-                            subtitle: Text(c.phone),
+                            leading: Icon(Icons.person, color: Colors.red.shade700),
+                            title: Text(c.name, style: TextStyle(color: Colors.red.shade900, fontWeight: FontWeight.w600)),
+                            subtitle: Text(c.phone, style: TextStyle(color: Colors.red.shade700)),
                           ),
                         ),
                   const SizedBox(height: 4),
-                  const Align(
+                  Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
                       'Send via: SMS (opens message app)',
-                      style: TextStyle(color: Colors.black54),
+                      style: TextStyle(color: Colors.red.shade700, fontSize: 12),
                     ),
                   )
                 ],

@@ -5,6 +5,10 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <!-- Optional: background location, needed only if you truly track in background -->
     <!-- <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" /> -->
+    
+    <!-- Contacts permission for picking emergency contacts -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    
     <application
         android:label="mobile_app"
         android:name="${applicationName}"

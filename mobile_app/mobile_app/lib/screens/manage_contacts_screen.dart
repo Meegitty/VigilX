@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_contacts/flutter_contacts.dart';
 import '../models/emergency_contact.dart';
 import '../storage/emergency_contacts_store.dart';
 
@@ -24,48 +25,40 @@ class _ManageContactsScreenState extends State<ManageContactsScreen> {
     setState(() => _contacts = list);
   }
 
-  Future<void> _addContactDialog() async {
-    final nameCtl = TextEditingController();
-    final phoneCtl = TextEditingController();
+  Future<void> _pickContact() async {
+    // Request permission to read contacts
+    if (await FlutterContacts.requestPermission(readonly: true)) {
+      // Open the native contact picker
+      final contact = await FlutterContacts.openExternalPick();
+      
+      if (contact != null) {
+        // Fetch full contact details to get the phone numbers
+        final fullContact = await FlutterContacts.getContact(contact.id);
+        
+        if (fullContact != null && fullContact.phones.isNotEmpty) {
+          final name = fullContact.displayName;
+          final phone = fullContact.phones.first.number;
 
-    final result = await showDialog<EmergencyContact>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Add emergency contact'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameCtl,
-              decoration: const InputDecoration(labelText: 'Name'),
-            ),
-            TextField(
-              controller: phoneCtl,
-              keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(labelText: 'Phone (with country code if possible)'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () {
-              final name = nameCtl.text.trim();
-              final phone = phoneCtl.text.trim();
-              if (name.isEmpty || phone.isEmpty) return;
-              Navigator.pop(ctx, EmergencyContact(name: name, phone: phone));
-            },
-            child: const Text('Add'),
-          ),
-        ],
-      ),
-    );
-
-    if (result == null) return;
-    final updated = [..._contacts, result];
-    await EmergencyContactsStore.save(updated);
-    if (!mounted) return;
-    setState(() => _contacts = updated);
+          final newContact = EmergencyContact(name: name, phone: phone);
+          final updated = [..._contacts, newContact];
+          
+          await EmergencyContactsStore.save(updated);
+          
+          if (!mounted) return;
+          setState(() => _contacts = updated);
+        } else {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Selected contact has no phone number.')),
+          );
+        }
+      }
+    } else {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Contacts permission denied.')),
+      );
+    }
   }
 
   Future<void> _deleteAt(int i) async {
@@ -79,7 +72,7 @@ class _ManageContactsScreenState extends State<ManageContactsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Emergency contacts'),
+        title: const Text('Emergency Contacts'),
         backgroundColor: Colors.transparent,
       ),
       body: ListView.separated(
@@ -89,7 +82,7 @@ class _ManageContactsScreenState extends State<ManageContactsScreen> {
         itemBuilder: (ctx, idx) {
           if (idx == _contacts.length) {
             return OutlinedButton.icon(
-              onPressed: _addContactDialog,
+              onPressed: _pickContact,
               icon: const Icon(Icons.add),
               label: const Text('Add contact'),
             );
