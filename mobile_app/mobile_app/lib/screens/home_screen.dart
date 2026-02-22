@@ -6,6 +6,7 @@ import 'package:geocoding/geocoding.dart';
 
 import '../services/location_service.dart';
 import '../services/sos_service.dart';
+import '../services/ble_service.dart';
 import '../storage/emergency_contacts_store.dart';
 import '../models/emergency_contact.dart';
 import 'manage_contacts_screen.dart';
@@ -18,13 +19,18 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  final BleService _bleService = BleService();
+
   bool monitoringOn = true;
+  bool _blePaired = false;
 
   LocationSnapshot? _loc;
   String? _locError;
   bool _loadingLoc = false;
   DateTime? _lastLocationUpdate;
   String? _locName;
+
+  bool _autoSosTriggered = false;
 
   StreamSubscription<LocationSnapshot>? _locSub;
 
@@ -36,11 +42,15 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadContacts();
     _refreshLocation();
     _startLiveLocation();
+    if (monitoringOn) {
+      _startBleMonitoring();
+    }
   }
 
   @override
   void dispose() {
     _stopLiveLocation();
+    _stopBleMonitoring();
     super.dispose();
   }
 
@@ -105,6 +115,90 @@ class _HomeScreenState extends State<HomeScreen> {
   void _stopLiveLocation() {
     _locSub?.cancel();
     _locSub = null;
+  }
+
+  Future<void> _startBleMonitoring() async {
+    try {
+      await _bleService.startScanAndConnect(
+        _onAccidentFromBle,
+        onConnectionChanged: (connected) {
+          if (!mounted) return;
+          setState(() {
+            _blePaired = connected;
+          });
+        },
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('BLE error: $e')),
+      );
+    }
+  }
+
+  Future<void> _stopBleMonitoring() async {
+    await _bleService.disconnect(
+      onConnectionChanged: (connected) {
+        if (!mounted) return;
+        setState(() {
+          _blePaired = connected;
+        });
+      },
+    );
+    if (!mounted) return;
+    setState(() {
+      _autoSosTriggered = false;
+    });
+  }
+
+  Future<void> _onAccidentFromBle(Map<String, dynamic> data) async {
+    if (!mounted) return;
+
+    // Only handle explicit accident events.
+    final flag = data['accident']?.toString().toUpperCase() ?? '';
+    if (flag != 'YES') return;
+
+    if (_autoSosTriggered) return;
+
+    if (_contacts.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Crash detected, but no emergency contacts configured.'),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _autoSosTriggered = true;
+    });
+
+    // Refresh location once if we don't have one yet.
+    if (_loc == null) {
+      try {
+        await _refreshLocation();
+      } catch (_) {}
+    }
+
+    final message = SosService.buildSosMessage(
+      isTest: false,
+      time: DateTime.now(),
+      location: _loc,
+    );
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Crash detected! Opening SMS for emergency contacts.'),
+      ),
+    );
+
+    for (final c in _contacts) {
+      try {
+        await SosService.openSmsComposer(phoneNumber: c.phone, body: message);
+      } catch (_) {
+        // Ignore per-contact failures.
+      }
+    }
   }
 
   Future<void> _updatePlaceName(LocationSnapshot snap) async {
@@ -280,6 +374,23 @@ class _HomeScreenState extends State<HomeScreen> {
                               : 'Turn monitoring on to enable crash detection.',
                           style: Theme.of(context).textTheme.bodyMedium,
                         ),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            Icon(
+                              _blePaired ? Icons.bluetooth_connected : Icons.bluetooth_disabled,
+                              size: 18,
+                              color: _blePaired ? Colors.green : Colors.redAccent,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              _blePaired ? 'Device paired' : 'Device not connected',
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: _blePaired ? Colors.green : Colors.redAccent,
+                                  ),
+                            ),
+                          ],
+                        ),
                       ],
                     ),
                   ),
@@ -289,8 +400,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       setState(() => monitoringOn = v);
                       if (v) {
                         _startLiveLocation();
+                        _startBleMonitoring();
                       } else {
                         _stopLiveLocation();
+                        _stopBleMonitoring();
                       }
                     },
                   ),
