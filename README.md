@@ -140,7 +140,11 @@ A **Complementary Filter** is used to:
 4. Monitor alerts and BLE accident notifications
 
 ---
-
+## Images
+![Alt text](imgs/img1.jpeg)
+![Alt text](imgs/img2.jpeg)
+![Alt text](imgs/img3.jpeg)
+---
 ## 🔮 Future Improvements
 * ☁️ Cloud-based emergency logging
 * 🔋 Battery monitoring & power optimization
